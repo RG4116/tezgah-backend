@@ -12,7 +12,10 @@ app = FastAPI()
 # ✅ CORS Ayarları
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  
+    allow_origins=[
+    "http://localhost:5173",
+    "https://deluxe-quokka-584ebd.netlify.app"
+],  
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
