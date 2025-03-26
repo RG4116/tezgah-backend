@@ -12,11 +12,13 @@ app = FastAPI()
 # ✅ CORS Ayarları
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:5173"],  
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
 
 # ✅ Veritabanını oluştur
 Base.metadata.create_all(bind=engine)
@@ -161,11 +163,22 @@ async def upload_excel(file: UploadFile = File(...), db: Session = Depends(get_d
         raise HTTPException(status_code=400, detail="Lütfen .xlsx formatında bir dosya yükleyin")
 
     contents = await file.read()
-    excel_data = pd.read_excel(BytesIO(contents))
+
+    try:
+        excel_data = pd.read_excel(BytesIO(contents))
+        excel_data.columns = excel_data.columns.str.strip()  # ✅ Sütun başlıklarındaki boşlukları sil
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Excel dosyası okunamadı: {str(e)}")
 
     required_columns = {"Ürün Adı", "Renk", "Fiyat", "Para Birimi"}
     if not required_columns.issubset(excel_data.columns):
         raise HTTPException(status_code=400, detail="Excel dosyasında eksik sütun var!")
+
+    # ✅ Satır boşluklarını ve eksik verileri temizle
+    excel_data = excel_data.dropna(subset=["Ürün Adı", "Renk", "Fiyat", "Para Birimi"])
+    excel_data["Ürün Adı"] = excel_data["Ürün Adı"].astype(str).str.strip()
+    excel_data["Renk"] = excel_data["Renk"].astype(str).str.strip()
+    excel_data["Para Birimi"] = excel_data["Para Birimi"].astype(str).str.strip()
 
     for _, row in excel_data.iterrows():
         product = db.query(Product).filter(Product.name == row["Ürün Adı"]).first()
@@ -174,6 +187,15 @@ async def upload_excel(file: UploadFile = File(...), db: Session = Depends(get_d
             db.add(product)
             db.commit()
             db.refresh(product)
+
+        # ✅ Aynı ürün ve aynı renk zaten varsa ekleme
+        color_exists = db.query(Color).filter(
+            Color.name == row["Renk"],
+            Color.product_id == product.id
+        ).first()
+
+        if color_exists:
+            continue
 
         new_color = Color(
             name=row["Renk"],
@@ -185,3 +207,4 @@ async def upload_excel(file: UploadFile = File(...), db: Session = Depends(get_d
 
     db.commit()
     return {"message": "Excel başarıyla yüklendi!"}
+
